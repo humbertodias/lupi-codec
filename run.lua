@@ -38,7 +38,8 @@ local function list_files_recursive(dir, prefix, result)
 end
 
 local function get_file_mtime(path)
-  local handle = io.popen("stat -c %Y '" .. path .. "'")
+  -- GNU: stat -c %Y; BSD/macOS: stat -f %m
+  local handle = io.popen("stat -c %Y '" .. path .. "' 2>/dev/null || stat -f %m '" .. path .. "'")
   if not handle then return 0 end
   local mtime = handle:read("*a")
   handle:close()
@@ -67,7 +68,8 @@ end
 local function perform_atomic_swap(output_dir, release_path)
   local current_link = output_dir .. "/current"
   local tmp_link = output_dir .. "/current_tmp"
-  os.execute(string.format("ln -sfn %s %s && mv -Tf %s %s", release_path, tmp_link, tmp_link, current_link))
+  os.execute(string.format("ln -sfn '%s' '%s'", release_path, tmp_link))
+  os.rename(tmp_link, current_link)
 end
 
 local function main()
