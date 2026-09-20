@@ -15,22 +15,29 @@ local function is_hidden_file(name)
   return name:match("^%.") ~= nil
 end
 
-local function list_files_recursive(dir, prefix, result)
-  prefix = prefix or ""
-  result = result or {}
-  local handle = io.popen("ls -A '" .. dir .. "'")
+-- One `find` instead of ls + popen("test -d") per entry. The old loop leaked
+-- FDs (inner popen never closed, parent ls stayed open while recursing) and
+-- died with "attempt to index a nil value" on cassettes with thousands of files.
+local function list_files_recursive(dir)
+  local result = {}
+  local cmd = string.format(
+    "find '%s' -name '.*' -prune -o -type f -print",
+    dir
+  )
+  local handle = io.popen(cmd)
   if not handle then return result end
 
-  for name in handle:lines() do
-    if not is_hidden_file(name) then
-      local full_path = dir .. "/" .. name
-      local rel_path = prefix .. name
-      local attr = io.popen("test -d '" .. full_path .. "' && echo dir || echo file"):read("*a")
-      if attr:match("dir") then
-        list_files_recursive(full_path, rel_path .. "/", result)
-      else
-        table.insert(result, rel_path)
-      end
+  local prefix = dir
+  if prefix:sub(-1) ~= "/" then
+    prefix = prefix .. "/"
+  end
+  local prefix_len = #prefix
+
+  for full_path in handle:lines() do
+    local rel_path = full_path:sub(prefix_len + 1)
+    local base = rel_path:match("([^/]+)$") or rel_path
+    if rel_path ~= "" and not is_hidden_file(base) then
+      table.insert(result, rel_path)
     end
   end
   handle:close()
